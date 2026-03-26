@@ -1,6 +1,6 @@
 # webdyff
 
-A thin wrapper for [dyff](https://github.com/homeport/dyff) that builds a WebAssembly binary and provides a static webpage to run the diff, available [here](https://c6-dev.github.io/webdyff/).
+A thin wrapper for [dyff](https://github.com/homeport/dyff) that builds a WebAssembly binary and provides a static webpage to run the diff with basic syntax highlighting, available [here](https://c6-dev.github.io/webdyff/).
 
 ## Build
 
