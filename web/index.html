@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>webdyff – YAML / JSON diff</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f6fa;
+      color: #333;
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+
+    header h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+    }
+
+    header p {
+      margin-top: 0.4rem;
+      color: #666;
+      font-size: 0.9rem;
+    }
+
+    #loading-banner {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 6px;
+      padding: 0.6rem 1rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+      text-align: center;
+    }
+
+    #loading-banner.hidden { display: none; }
+
+    #error-banner {
+      background: #fdecea;
+      border: 1px solid #f44336;
+      border-radius: 6px;
+      padding: 0.6rem 1rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    #error-banner.hidden { display: none; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 700px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      min-height: calc(0.85rem * 1.2 + 1rem);
+    }
+
+    .panel-header label {
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+
+    textarea {
+      width: 100%;
+      height: 380px;
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 0.6rem;
+      resize: vertical;
+      background: #fafafa;
+    }
+
+    textarea:focus { outline: none; border-color: #4a90e2; }
+
+    /* ── YAML editor overlay (transparent textarea over highlighted pre) ── */
+    .editor-wrapper {
+      position: relative;
+      width: 100%;
+      height: 380px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .editor-wrapper:focus-within { border-color: #4a90e2; }
+
+    .yaml-highlight {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      margin: 0;
+      padding: 0.6rem;
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      background: #282c34;
+      color: #abb2bf;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow: auto;
+      tab-size: 2;
+      pointer-events: none;
+    }
+
+    .editor-wrapper textarea {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      margin: 0;
+      padding: 0.6rem;
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      background: transparent;
+      color: transparent;
+      caret-color: #abb2bf;
+      border: none;
+      border-radius: 0;
+      outline: none;
+      resize: none;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow: auto;
+      tab-size: 2;
+    }
+
+    .editor-wrapper textarea::placeholder { color: #7f848e; opacity: 1; }
+
+    /* ── YAML token classes ── */
+    .yaml-key     { color: #61afef; }
+    .yaml-string  { color: #98c379; }
+    .yaml-number  { color: #d19a66; }
+    .yaml-bool    { color: #d19a66; }
+    .yaml-null    { color: #7f848e; }
+    .yaml-comment { color: #7f848e; font-style: italic; }
+    .yaml-dash    { color: #abb2bf; }
+
+    .btn-row {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: center;
+      padding: 0.25rem 0;
+    }
+
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 6px;
+      padding: 0.5rem 2rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: opacity 0.15s;
+      background: #4a90e2;
+      color: #fff;
+    }
+
+    button:hover { opacity: 0.85; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .output-panel {
+      grid-column: 1 / -1;
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      padding: 1rem;
+    }
+
+    .output-panel label {
+      display: block;
+      font-weight: 600;
+      font-size: 0.9rem;
+      margin-bottom: 0.6rem;
+    }
+
+    #output {
+      font-family: 'Menlo', 'Consolas', monospace;
+      font-size: 0.82rem;
+      background: #1e1e1e;
+      color: #abb2bf;
+      border: 1px solid #3e3e3e;
+      border-radius: 6px;
+      padding: 0.75rem;
+      min-height: 80px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-x: auto;
+      overflow-y: visible;
+    }
+
+    /* ── Diff output token classes ── */
+    .diff-path     { color: #abb2bf; font-weight: bold; }
+    .diff-header   { color: #C7C43F; }
+    .diff-addition { color: #58BF38; background: rgba(88,191,56,0.08); }
+    .diff-removal  { color: #B9311B; background: rgba(185,49,27,0.08); }
+    .diff-context  { color: #6b7280; }
+
+    .github-link {
+      position: absolute;
+      top: 1rem;
+      right: 1.5rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .github-link a {
+      text-decoration: none;
+      color: #1a56db;
+    }
+
+    .github-link a:hover {
+      text-decoration: underline;
+    }
+
+    label.file-btn {
+      cursor: pointer;
+      border: none;
+      border-radius: 6px;
+      padding: 0.5rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: opacity 0.15s;
+      background: #e8f0fe;
+      color: #1a56db;
+      display: inline-block;
+    }
+
+    label.file-btn:hover { opacity: 0.85; }
+
+    .editor-wrapper.drag-over {
+      border-color: #4a90e2;
+      background: #eef4fd;
+      outline: 2px dashed #4a90e2;
+    }
+
+    .file-input { display: none; }
+  </style>
+</head>
+<body>
+
+  <div class="github-link">
+    <a href="https://github.com/c6-dev/webdyff" target="_blank">View source on GitHub</a>
+  </div>
+
+  <header>
+    <h1>webdyff – YAML &amp; JSON diff</h1>
+    <p>Diff runs entirely in your browser — no data is uploaded anywhere.</p>
+    <p>Based on <a href="https://github.com/homeport/dyff" target="_blank">dyff</a></p>
+  </header>
+
+  <div id="loading-banner">⏳ Loading WebAssembly module…</div>
+  <div id="error-banner" class="hidden"></div>
+
+  <div class="grid" id="app" style="display:none;">
+    <div class="panel">
+      <div class="panel-header">
+        <label for="from">From (YAML / JSON)</label>
+        <label class="file-btn" for="from-file-input">📂 Upload file</label>
+        <input type="file" id="from-file-input" class="file-input" accept=".yaml,.yml,.json" />
+      </div>
+      <div class="editor-wrapper" id="from-wrapper">
+        <pre class="yaml-highlight" id="from-hl" aria-hidden="true"></pre>
+        <textarea id="from" spellcheck="false" placeholder="Paste, drag &amp; drop, or upload your 'from' YAML / JSON here…"></textarea>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <label for="to">To (YAML / JSON)</label>
+        <label class="file-btn" for="to-file-input">📂 Upload file</label>
+        <input type="file" id="to-file-input" class="file-input" accept=".yaml,.yml,.json" />
+      </div>
+      <div class="editor-wrapper" id="to-wrapper">
+        <pre class="yaml-highlight" id="to-hl" aria-hidden="true"></pre>
+        <textarea id="to" spellcheck="false" placeholder="Paste, drag &amp; drop, or upload your 'to' YAML / JSON here…"></textarea>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button id="diffBtn" onclick="runDiff()">Compute Diff</button>
+    </div>
+
+    <div class="output-panel">
+      <label>Output</label>
+      <div id="output">(click "Compute Diff" to see results)</div>
+    </div>
+  </div>
+
+<script src="wasm_exec.js"></script>
+<script>
+  // ── Utilities ────────────────────────────────────────────────────────────
+
+  function escapeHtml(text) {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function showError(msg) {
+    const banner = document.getElementById('error-banner');
+    banner.textContent = msg;
+    banner.classList.remove('hidden');
+  }
+
+  function clearError() {
+    const banner = document.getElementById('error-banner');
+    banner.textContent = '';
+    banner.classList.add('hidden');
+  }
+
+  // ── YAML Syntax Highlighting ─────────────────────────────────────────────
+
+  function highlightYamlValue(raw) {
+    if (!raw.length) return '';
+    const trimmed = raw.trim();
+    if (!trimmed) return escapeHtml(raw);
+    // Inline comment attached to a value (e.g. "foo # comment")
+    const commentIdx = raw.search(/\s+#/);
+    let valueStr = raw, commentStr = '';
+    if (commentIdx !== -1) {
+      valueStr = raw.slice(0, commentIdx);
+      commentStr = raw.slice(commentIdx);
+    }
+    const t = valueStr.trim();
+    let cls;
+    if (/^["']/.test(t) && /["']$/.test(t)) {
+      cls = 'yaml-string';
+    } else if (/^(true|false|yes|no|on|off)$/i.test(t)) {
+      cls = 'yaml-bool';
+    } else if (/^(null|~)$/i.test(t)) {
+      cls = 'yaml-null';
+    } else if (/^-?\d+(\.\d+)?([eE][+\-]?\d+)?$/.test(t)) {
+      cls = 'yaml-number';
+    } else {
+      cls = 'yaml-string';
+    }
+    const result = `<span class="${cls}">${escapeHtml(valueStr)}</span>`;
+    if (commentStr) {
+      return result + `<span class="yaml-comment">${escapeHtml(commentStr)}</span>`;
+    }
+    return result;
+  }
+
+  function highlightYamlLine(line) {
+    // Full-line comment
+    if (/^\s*#/.test(line)) {
+      return `<span class="yaml-comment">${escapeHtml(line)}</span>`;
+    }
+
+    // Document separators
+    if (/^---/.test(line) || /^\.\.\./.test(line)) {
+      return `<span class="yaml-dash">${escapeHtml(line)}</span>`;
+    }
+
+    // Key: value (with optional leading whitespace)
+    const kvMatch = line.match(/^(\s*)([\w\-.]+)(\s*:\s?)(.*)$/);
+    if (kvMatch) {
+      const [, indent, key, sep, rest] = kvMatch;
+      return escapeHtml(indent) +
+             `<span class="yaml-key">${escapeHtml(key)}</span>` +
+             escapeHtml(sep) +
+             (rest.length ? highlightYamlValue(rest) : '');
+    }
+
+    // List item: "  - value"
+    const listMatch = line.match(/^(\s*)(-)(\s+)(.*)$|^(\s*)(-)(\s*)$/);
+    if (listMatch) {
+      if (listMatch[6]) {
+        // bare dash with no value
+        const indent = listMatch[5], dash = listMatch[6], trail = listMatch[7];
+        return escapeHtml(indent) + `<span class="yaml-dash">${dash}</span>` + escapeHtml(trail);
+      }
+      const [, indent, dash, space, rest] = listMatch;
+      return escapeHtml(indent) +
+             `<span class="yaml-dash">${dash}</span>` +
+             escapeHtml(space) +
+             highlightYamlValue(rest);
+    }
+
+    return escapeHtml(line);
+  }
+
+  function highlightYaml(code) {
+    return code.split('\n').map(highlightYamlLine).join('\n');
+  }
+
+  function setupYamlEditor(textareaId, preId) {
+    const ta  = document.getElementById(textareaId);
+    const pre = document.getElementById(preId);
+
+    function update() {
+      // Trailing newline prevents Chrome scroll-glitch on last line
+      pre.innerHTML = highlightYaml(ta.value) + '\n';
+      // Always sync scroll after content update
+      pre.scrollTop  = ta.scrollTop;
+      pre.scrollLeft = ta.scrollLeft;
+    }
+
+    // Sync scroll position so highlighted text tracks the textarea
+    ta.addEventListener('scroll', () => {
+      pre.scrollTop  = ta.scrollTop;
+      pre.scrollLeft = ta.scrollLeft;
+    });
+
+    // Update immediately on input — no debounce needed, the tokenizer is fast
+    ta.addEventListener('input', update);
+    ta.addEventListener('paste', () => requestAnimationFrame(update));
+
+    update();
+  }
+
+  // Initialise both editors immediately (DOM is ready at script parse time)
+  setupYamlEditor('from', 'from-hl');
+  setupYamlEditor('to',   'to-hl');
+
+  // ── File Upload & Drag-and-Drop ──────────────────────────────────────────
+
+  function setupFileHandling(textareaId, wrapperId, fileInputId) {
+    const ta        = document.getElementById(textareaId);
+    const wrapper   = document.getElementById(wrapperId);
+    const fileInput = document.getElementById(fileInputId);
+
+    function loadFile(file) {
+      const name = file.name.toLowerCase();
+      if (!name.endsWith('.yaml') && !name.endsWith('.yml') && !name.endsWith('.json')) {
+        showError('Unsupported file type. Please use a .yaml, .yml, or .json file.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        ta.value = e.target.result;
+        ta.dispatchEvent(new Event('input'));
+        clearError();
+      };
+      reader.onerror = function() { showError('Failed to read file.'); };
+      reader.readAsText(file);
+    }
+
+    fileInput.addEventListener('change', function() {
+      const file = fileInput.files[0];
+      if (!file) return;
+      loadFile(file);
+      fileInput.value = '';
+    });
+
+    wrapper.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      wrapper.classList.add('drag-over');
+    });
+
+    wrapper.addEventListener('dragleave', function(e) {
+      if (e.relatedTarget === null || !wrapper.contains(e.relatedTarget)) {
+        wrapper.classList.remove('drag-over');
+      }
+    });
+
+    wrapper.addEventListener('drop', function(e) {
+      e.preventDefault();
+      wrapper.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (!file) return;
+      loadFile(file);
+    });
+  }
+
+  setupFileHandling('from', 'from-wrapper', 'from-file-input');
+  setupFileHandling('to',   'to-wrapper',   'to-file-input');
+
+  // ── WASM Initialisation ──────────────────────────────────────────────────
+
+  const go = new Go();
+
+  WebAssembly.instantiateStreaming(fetch("app.wasm"), go.importObject)
+    .then(result => {
+      go.run(result.instance);
+      document.getElementById("loading-banner").classList.add("hidden");
+      document.getElementById("app").style.display = "grid";
+    })
+    .catch(err => {
+      document.getElementById("loading-banner").classList.add("hidden");
+      const errBanner = document.getElementById("error-banner");
+      errBanner.textContent = "❌ Failed to load WASM: " + err.message;
+      errBanner.classList.remove("hidden");
+    });
+
+  // ── Diff Output Highlighting ─────────────────────────────────────────────
+
+  function renderDiff(text) {
+    if (!text || !text.trim()) {
+      return '<span class="diff-context">(no differences)</span>';
+    }
+
+    // Whether we are inside a value/order-change block introduced by ± or ⇆.
+    // Only within such a block should leading "- " / "+ " lines be treated as
+    // diff removals/additions.  Outside of it they are ordinary YAML list items
+    // that are merely being described as part of an addition or removal.
+    let inChangeBlock = false;
+    // Whether we are inside a structural removal or addition section, whose
+    // content lines should be coloured entirely red or green.
+    let inRemovalSection = false;
+    let inAdditionSection = false;
+
+    return text.split('\n').map(line => {
+      const escaped = escapeHtml(line);
+
+      if (!line.trim()) {
+        // Blank lines separate diff entries; reset all block state.
+        inChangeBlock = false;
+        inRemovalSection = false;
+        inAdditionSection = false;
+        return escaped;
+      }
+
+      // Unicode change-type symbols (± ⇆) introduce a value/order-change block.
+      if (/^\s*[±⇆]/.test(line)) {
+        inChangeBlock = true;
+        inRemovalSection = false;
+        inAdditionSection = false;
+        return `<span class="diff-header">${escaped}</span>`;
+      }
+
+      // Structural addition/removal headers: lines starting with +/- followed
+      // by a description that ends with ":" (e.g. "- one list entry removed:",
+      // "+ 2 map entries added:").  They do NOT introduce a value-change block.
+      if (/^\s*[+\-]\s+[^:]+:$/.test(line)) {
+        inChangeBlock = false;
+        if (/^\s*-/.test(line)) {
+          inRemovalSection = true;
+          inAdditionSection = false;
+          return `<span class="diff-removal">${escaped}</span>`;
+        } else {
+          inAdditionSection = true;
+          inRemovalSection = false;
+          return `<span class="diff-addition">${escaped}</span>`;
+        }
+      }
+
+      // Inside a value/order-change block, "- " and "+ " lines are the actual
+      // old/new values, not YAML list items.
+      if (inChangeBlock) {
+        if (/^\s*\+\s/.test(line)) return `<span class="diff-addition">${escaped}</span>`;
+        if (/^\s*-\s/.test(line))  return `<span class="diff-removal">${escaped}</span>`;
+      }
+
+      // Inside a structural removal or addition section, colour the content.
+      if (inRemovalSection)  return `<span class="diff-removal">${escaped}</span>`;
+      if (inAdditionSection) return `<span class="diff-addition">${escaped}</span>`;
+
+      // Path lines start with a non-whitespace character.
+      if (/^\S/.test(line)) return `<span class="diff-path">${escaped}</span>`;
+
+      // Everything else is context (indented YAML structure description).
+      return `<span class="diff-context">${escaped}</span>`;
+    }).join('\n');
+  }
+
+  // ── Diff Runner ──────────────────────────────────────────────────────────
+
+  function runDiff() {
+    const from = document.getElementById("from").value;
+    const to   = document.getElementById("to").value;
+    const out  = document.getElementById("output");
+    const btn  = document.getElementById("diffBtn");
+
+    btn.disabled = true;
+    try {
+      // computeDiff is registered by the Go WASM module
+      const result = computeDiff(from, to);
+      out.innerHTML = renderDiff(result);
+    } catch (e) {
+      out.textContent = "Error: " + e.message;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+</script>
+
+</body>
+</html>
