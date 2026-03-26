@@ -6,3 +6,4 @@ A thin wrapper for [dyff](https://github.com/homeport/dyff) that builds a WebAss
 
           GOOS=js GOARCH=wasm go build -o web/app.wasm ./cmd/wasm
           cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" web/wasm_exec.js
+The /web directory will contain all the necessary files to deploy to any static site hosting.
