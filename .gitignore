@@ -1,7 +1,3 @@
-.idea
-dist
-**/*.coverprofile
-coverage.txt
 web/wasm_exec.js
 web/app.wasm
 
